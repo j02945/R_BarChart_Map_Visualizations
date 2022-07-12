@@ -1,0 +1,185 @@
+---
+title: "Creating Bar Charts and Map Visualizations in R"
+author: "Jottin Lugo"
+date: "July 1, 2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+## Introduction
+I created a simple data analysis report using `knitr` from Rstudio. The report consists of bar charts generated with `ggplot()` and map visualization from `plot_usmap()` and `ggplotly()`. There are several other libraries that I used to complete this task which are listed on the section below.
+
+#### Loading the libraries
+```{r libraries, echo=TRUE}
+# prior to loading libraries you must install them
+# install.packages("libraryname")
+library(janitor) # easily reformat column names using the clean_names function
+library(dplyr) # sorts the data using the arrange and desc function
+library(tidyr) # slice the data using the slice function
+library(ggplot2) # plots the data
+library(stringr) # truncate axis titles when needed
+library(scales) # convert values to dollar format
+library(usmap) # generates a static map
+library(plotly) # makes map interactive by handling text hovering the map
+library(readr) # handles the import of csv file: states_longitude_latitude.csv
+```
+
+#### Filtering and Sorting the Data
+```{r clean, echo=TRUE}
+# separate the data in two groups: income and rent, then assign this to a variable
+rent_data <- clean_names(us_rent_income) %>% filter(variable=="rent") %>% arrange(desc(estimate))
+income_data <- clean_names(us_rent_income) %>% filter(variable=="income") %>% arrange(desc(estimate))
+```
+
+#### Organizing the Data
+```{r slice, echo=TRUE}
+# returns the top 10 results, ordered by specific column, then assign this to a variable
+top_10_rent <- slice_max(rent_data, order_by = estimate, n = 10)
+top_10_income <- slice_max(income_data, order_by = estimate, n = 10)
+```
+
+#### Variables
+```{r variables, echo=TRUE}
+# values that repeat are saved in a variable to clear up space
+source <- "Source: tidyr - us_rent_income data"
+```
+
+#### Getting the Map Data Ready for Visualization
+```{r mapdata, echo=TRUE}
+# read csv file located in working directory
+states_coord <- read_csv("states_longitude_latitude.csv")
+
+# rename column name back to state before plotting
+states_coord_as_name <- rename(states_coord, name=state)
+
+# join data frames by column name
+joined_data_income_final <- inner_join(income_data,states_coord_as_name,by="name")
+
+# convert to data frame and rename the column back to state
+income_final <- data.frame(joined_data_income_final) %>% rename(state=name)
+
+```
+
+## Summary
+Now that I've loaded the libraries, filtered, sorted, and sliced the data I am going to use in this project; I can plot it using *ggplot2*. For this example, the function `geom_col()` creates the bar charts. To zoom in on the data, I used the `coord_cartesian()` function.
+
+#### Figure 1
+```{r income, echo=TRUE, out.width="90%"}
+# chart 1 ggplot and geom_col generate the bar charts
+ggplot(top_10_income,
+       mapping = aes(
+         x = str_trunc(name, 20), # str_trunc function makes sure names do not overlap
+         y = estimate,
+         fill = estimate
+       )) +
+  geom_col() +
+  geom_text(aes(label = dollar(estimate)),
+            size = 3,
+            color = "white",
+            vjust = 1.5) +
+  scale_y_continuous(labels = dollar) +
+  coord_cartesian(xlim = c(1, NA), ylim = c(30000, NA)) + # coord_cartesian function Zooms in Y-Axis and scales view
+  labs(
+    title = "Top 10 Highest Income in the United States",
+    x = "State",
+    y = "Income",
+    caption = source,
+    fill = "Income"
+  ) +
+  theme_light(base_size = 9) + # theme_light to handle most of aesthetics
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(size = 14),
+    plot.caption = element_text(color = "#5C6380")
+  )
+```
+
+#### Figure 2
+```{r rent, echo=TRUE, out.width="90%"}
+# chart 2 ggplot and geom_col generate the bar charts
+ggplot(top_10_rent,
+       mapping = aes(
+         x = str_trunc(name, 20),
+         y = estimate,
+         fill = estimate
+       )) + 
+  geom_col() +
+  geom_text(aes(label = dollar(estimate)),
+            size = 3,
+            color = "white",
+            vjust = 1.5) +
+  scale_y_continuous(labels = dollar) +
+  coord_cartesian(xlim = c(1, NA), ylim = c(1000, NA)) +
+  labs(
+    title = "Top 10 Highest Rent in the United States",
+    x = "State",
+    y = "Rent",
+    caption = source,
+    fill = "Rent"
+  ) +
+  theme_light(base_size = 9) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(size = 14),
+    plot.caption = element_text(color = "#5C6380")
+  )
+```
+
+### Preparing the Data For Questions
+```{r prepare, echo=TRUE}
+income_sum <- drop_na(income_final) %>% summarize(sum(estimate))
+rent_sum <- drop_na(rent_data) %>% summarize(sum(estimate))
+perc_income_to_rent <- round(income_sum$`sum(estimate)` / rent_sum$`sum(estimate)`, 2)
+top_10_lowest_income <- head(joined_data_income_final %>% arrange(estimate), n = 10)
+```
+
+### What Percentage of the income is going to rent?
+```{r insight1, echo=TRUE}
+print(paste(perc_income_to_rent,"%"))
+```
+
+### What's the min, median, and max value of income?
+```{r insight2, echo=TRUE}
+income_final$estimate %>% summary()
+```
+ 
+### What's the min, median, and max value of rent?
+```{r insight3, echo=TRUE}
+rent_data$estimate %>% summary()
+```
+ 
+### What are the top 10 states with lowest income?
+```{r insight4, echo=TRUE}
+top_10_lowest_income %>% select(name, estimate)
+```
+
+
+For the interactive map, I used `plot_usmap()` and `ggplotly()` from *plotly*: to generate the map visualization *plot_usmap()* and to act as interactive layer I used `ggplotly()`. The csv data was loaded with `readr()`. Additionally, I joined two data frames with `inner_join()` from the *dplyr* package.
+
+#### Figure 3:
+```{r mapview, echo=TRUE, out.width="100%"}
+# map visualization made with usmap, plotly and ggplot2
+p <- plot_usmap(
+  data = data.frame(income_final),
+  values = "estimate",
+  color = "grey",
+  labels = TRUE
+  ) +
+  scale_fill_continuous(name = "Income", labels = dollar) +
+  theme_light() +
+  theme(axis.text = element_blank()) + # hide the axis text for minimal viewing
+  theme(legend.position = "right") +
+  labs(title = "Income by State", y = "Latitude", x = "Longitude")
+ggplotly(p)
+```
+
+## Closing
+This is just one way to generate map visualizations in R. There are other libraries such as *rbokeh* or *leaflet* that allow you to create interactive maps. I was inclined to use *plotly* and *usmap* because they work well with *ggplot2* `theme()`. Further, `ggplotly()` and `plot_usmap()` help you to create swiftly USA interactive maps and that was part of the focus of this project.
+
+
+For additional documentation, you can visit [usmap](https://cran.r-project.org/web/packages/usmap/vignettes/mapping.html), [plotly](https://plotly.com/r) and [ggplot2](https://ggplot2.tidyverse.org).
+
